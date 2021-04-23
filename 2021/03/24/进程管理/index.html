@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="整体设计整个hardCore的进程部分由uCore扩展而来，我们主要扩展的目标有以下几个：  实现对内核线程的支持，使得用户态可以使用多线程 扩展OS支持的调度算法： 基于红黑树实现linux2.6版本中经典进程调度器CFS stride调度器 RR调度器   增加用户态的信号量支持，搭配内核线程在用户态实现生产者消费者，读者写者等经典线程同步算法 提高OS进程的可靠性，在用户态因为爆栈等错误退出">
+<meta property="og:type" content="article">
+<meta property="og:title" content="hardCore 进程管理">
+<meta property="og:url" content="http://example.com/2021/03/24/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/index.html">
+<meta property="og:site_name" content="lagrange&#39;s blog">
+<meta property="og:description" content="整体设计整个hardCore的进程部分由uCore扩展而来，我们主要扩展的目标有以下几个：  实现对内核线程的支持，使得用户态可以使用多线程 扩展OS支持的调度算法： 基于红黑树实现linux2.6版本中经典进程调度器CFS stride调度器 RR调度器   增加用户态的信号量支持，搭配内核线程在用户态实现生产者消费者，读者写者等经典线程同步算法 提高OS进程的可靠性，在用户态因为爆栈等错误退出">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://uploader.shimo.im/f/hAtGzepqeSu08AhO.png!thumbnail?fileGuid=ZzkLVnaGVeiM443Q">
+<meta property="og:image" content="https://uploader.shimo.im/f/lKtHA4uomBRs6JTi.png!thumbnail?fileGuid=ZzkLVnaGVeiM443Q">
+<meta property="og:image" content="https://uploader.shimo.im/f/DlKvoeiCUVwBtK9l.png!thumbnail?fileGuid=ZzkLVnaGVeiM443Q">
+<meta property="article:published_time" content="2021-03-24T10:47:34.000Z">
+<meta property="article:modified_time" content="2021-04-23T00:31:31.236Z">
+<meta property="article:author" content="lagrange">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://uploader.shimo.im/f/hAtGzepqeSu08AhO.png!thumbnail?fileGuid=ZzkLVnaGVeiM443Q">
+
+<link rel="canonical" href="http://example.com/2021/03/24/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>hardCore 进程管理 | lagrange's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">lagrange's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">what's dead may never die</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档<span class="badge">14</span></a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2021/03/24/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="lagrange">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="lagrange's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          hardCore 进程管理
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-03-24 10:47:34" itemprop="dateCreated datePublished" datetime="2021-03-24T10:47:34Z">2021-03-24</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2021-04-23 00:31:31" itemprop="dateModified" datetime="2021-04-23T00:31:31Z">2021-04-23</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/OS/" itemprop="url" rel="index"><span itemprop="name">OS</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h2 id="整体设计"><a href="#整体设计" class="headerlink" title="整体设计"></a>整体设计</h2><p>整个hardCore的进程部分由uCore扩展而来，我们主要扩展的目标有以下几个：</p>
+<ol>
+<li>实现对内核线程的支持，使得用户态可以使用多线程</li>
+<li>扩展OS支持的调度算法：<ol>
+<li>基于红黑树实现linux2.6版本中经典进程调度器CFS</li>
+<li>stride调度器</li>
+<li>RR调度器</li>
+</ol>
+</li>
+<li>增加用户态的信号量支持，搭配内核线程在用户态实现生产者消费者，读者写者等经典线程同步算法</li>
+<li>提高OS进程的可靠性，在用户态因为爆栈等错误退出的时候不会导致OS崩溃</li>
+<li>实现top等用户命令，扩展shell功能支持用户态进程后台执行</li>
+</ol>
+<p>当前已经实现了内核态进程以及CFS调度器，下文详细的阐述了这两个部分的实现过程，下一阶段主要想实现的内容就是信号量以及用户态程序的支持，从而构建一个完整的OS。</p>
+<h2 id="用户态内核进程实现"><a href="#用户态内核进程实现" class="headerlink" title="用户态内核进程实现"></a>用户态内核进程实现</h2><h3 id="linux-实现参考"><a href="#linux-实现参考" class="headerlink" title="linux 实现参考"></a>linux 实现参考</h3><p><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/28535838/how-stack-or-memory-is-allocated-for-threads-under-the-same-process-in-linux?fileGuid=ZzkLVnaGVeiM443Q">How Stack or memory is allocated for threads under the same process in Linux</a></p>
+<p>The current ‘thread’ concept in Linux is the NPTL one. NPTL uses<code>clone()</code>, which wraps<code>sys_clone()</code>. Allocating a stack for a new ‘thread’ is handled in the user space (ie. libc), not in kernel (ie. Linux). A library can allocate a stack using the allocation of choice (eg.<code>malloc</code>) and then call<code>clone()</code>passing this address as the stack (of course, needs to pass the top of the allocated region, since stacks grow downwards on most platforms):</p>
+<p>Unlike<code>fork()</code>,<code>clone()</code>allows the child process to share parts of its execution context with the calling process, such as the memory space, the table of file descriptors, and the table of signal handlers….</p>
+<p>The main use of<code>clone()</code>is to implement threads: multiple threads of control in a program that run concurrently in a shared memory space.</p>
+<p>When the child process is created with<code>clone()</code>, it executes the function<code>fn(arg)</code>…</p>
+<p>The child_stack argument specifies the location of the stack used by the child process …</p>
+<p>If you want to learn more specific details, open the source of your distro<a target="_blank" rel="noopener" href="https://man7.org/linux/man-pages/man3/pthread_create.3.html?fileGuid=ZzkLVnaGVeiM443Q">pthread_create</a>implementation and get reading.</p>
+<p>For example<a target="_blank" rel="noopener" href="https://github.com/lattera/glibc/blob/a2f34833b1042d5d8eeb263b4cf4caaea138c4ad/nptl/pthread_create.c?fileGuid=ZzkLVnaGVeiM443Q">pthread_create.c</a>:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">int</span><br><span class="line">__pthread_create_2_1 (newthread, attr, start_routine, arg)</span><br><span class="line">  ...</span><br><span class="line">  struct pthread *pd &#x3D; NULL;</span><br><span class="line">  int err &#x3D; ALLOCATE_STACK (iattr, &amp;pd);</span><br></pre></td></tr></table></figure>
+<p>and<a target="_blank" rel="noopener" href="https://github.com/lattera/glibc/blob/a2f34833b1042d5d8eeb263b4cf4caaea138c4ad/nptl/allocatestack.c?fileGuid=ZzkLVnaGVeiM443Q">allocatestack.c</a>:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"># define ALLOCATE_STACK(attr, pd) allocate_stack (attr, pd, &amp;stackaddr)</span><br><span class="line">static int</span><br><span class="line">allocate_stack (const struct pthread_attr *attr, struct pthread **pdp,</span><br><span class="line">   ALLOCATE_STACK_PARMS)</span><br><span class="line">...</span><br></pre></td></tr></table></figure>
+<p>You’ll see that stack allocation has some whistles and bells, like caching and reusing stack regions, guard pages, but in the end is just a memory region allocated in user space.</p>
+<h3 id="uCore-实现"><a href="#uCore-实现" class="headerlink" title="uCore 实现"></a>uCore 实现</h3><p>在 linux 中，thread 通过 clone 调用实现，但是分配栈空间是用户空间关心的事，比如使用 malloc 申请之类的。</p>
+<p>在 uCore 中并没有实现用户态的 malloc，所以暂时无法使用 malloc 在堆区为一个新的进程开辟一个栈空间，但这并非就是无法实现进程。</p>
+<p>于是我们换了另外一种方式就是挪用调用 clone 进程的栈空间。linux 默认为每个进程分配 1M 的栈空间，一旦某个进程调用 clone，我们将该调用进程 1M 的栈空间等分为 16 份，取出一块空闲的栈空间分配给该子线程。针对可能出现递归调用 phthread_create 的情况，不断向上找到第一个调用 clone，然后栈被分割成 16 份的进程，从该进程处获取栈空间。</p>
+<p><img src="https://uploader.shimo.im/f/hAtGzepqeSu08AhO.png!thumbnail?fileGuid=ZzkLVnaGVeiM443Q" alt="图片"></p>
+<p>子线程退出时会向该进程归还所使用的栈空间，所以包含该第一个调用 clone 的进程在内（下文统一称为祖宗线程），同一时间进程里可以存在 16 个线程。</p>
+<h4 id="PCB-支持"><a href="#PCB-支持" class="headerlink" title="PCB 支持"></a>PCB 支持</h4><p>在 PCB 中增加以下三个变量用于支持内核线程</p>
+<table>
+<thead>
+<tr>
+<th align="left">Type</th>
+<th align="left">name</th>
+<th align="left">meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="left">int</td>
+<td align="left">is_thread</td>
+<td align="left">标志该进程是否是一个子线程</td>
+</tr>
+<tr>
+<td align="left">int</td>
+<td align="left">stack_num</td>
+<td align="left">标志该子线程占用了父进程的哪一个栈帧，is_thread = 1 才有效</td>
+</tr>
+<tr>
+<td align="left">int [ ]</td>
+<td align="left">stack[MAX_THREAD]</td>
+<td align="left">每个主进程能够开启 16 个线程（包括主线程（自己）在内），每个块为 0 表示该块的栈没有被占用，不为 0 表示被占用，且值是该子线程的 pid</td>
+</tr>
+</tbody></table>
+<p>特别说明只有祖宗线程和普通进程 is_thread 为 0，其他子线程该值都是 1。</p>
+<h4 id="clone-调用"><a href="#clone-调用" class="headerlink" title="clone 调用"></a>clone 调用</h4><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br></pre></td><td class="code"><pre><span class="line">int do_clone(void *(*fn)(void *), void *arg, void (*exit)(int))</span><br><span class="line">&#123;</span><br><span class="line">    int ret &#x3D; -E_NO_FREE_PROC;</span><br><span class="line">    struct proc_struct *proc;</span><br><span class="line">    if (nr_process &gt;&#x3D; MAX_PROCESS)</span><br><span class="line">        goto fork_out;</span><br><span class="line">    ret &#x3D; -E_NO_MEM;</span><br><span class="line">    &#x2F;&#x2F; 新建一个空进程描述符</span><br><span class="line">    if ((proc &#x3D; alloc_proc()) &#x3D;&#x3D; NULL)</span><br><span class="line">        goto fork_out;</span><br><span class="line">    &#x2F;&#x2F; 设置线程名称为 父线程名称-t</span><br><span class="line">    int i &#x3D; 0;</span><br><span class="line">    for (i &#x3D; 0; current-&gt;name[i] !&#x3D; &#39;\0&#39;; i++)</span><br><span class="line">        proc-&gt;name[i] &#x3D; current-&gt;name[i];</span><br><span class="line">    proc-&gt;name[i] &#x3D; &#39;-&#39;;</span><br><span class="line">    proc-&gt;name[i + 1] &#x3D; &#39;t&#39;;</span><br><span class="line">    proc-&gt;name[i + 2] &#x3D; &#39;\0&#39;;</span><br><span class="line">    proc-&gt;is_thread &#x3D; 1; &#x2F;&#x2F;标志该进程是一个子线程</span><br><span class="line">    &#x2F;&#x2F; 针对可能出现递归调用pthread_create的情况，找到不为线程的主进程</span><br><span class="line">    struct proc_struct *father &#x3D; current;</span><br><span class="line">    while (father-&gt;is_thread)</span><br><span class="line">        father &#x3D; father-&gt;parent;</span><br><span class="line">    &#x2F;&#x2F; 如果不设置线程归属于调用clone的线程，直接指向主线程会导致子线程中没法调用join来等待</span><br><span class="line">    proc-&gt;parent &#x3D; current;</span><br><span class="line">    &#x2F;&#x2F; 在主线程里面找一块栈分配给该子线程</span><br><span class="line">    proc-&gt;stack_num &#x3D; 1;</span><br><span class="line">    for (; proc-&gt;stack_num &lt; MAX_THREAD; proc-&gt;stack_num++)</span><br><span class="line">        if (father-&gt;stack[proc-&gt;stack_num] &#x3D;&#x3D; 0)</span><br><span class="line">        &#123;</span><br><span class="line">            father-&gt;stack[proc-&gt;stack_num] &#x3D; 1;</span><br><span class="line">            break;</span><br><span class="line">        &#125;</span><br><span class="line">    assert(proc-&gt;stack_num !&#x3D; MAX_THREAD);</span><br><span class="line">    assert(current-&gt;wait_state &#x3D;&#x3D; 0);</span><br><span class="line">    &#x2F;&#x2F; 设置内核栈</span><br><span class="line">    if (setup_kstack(proc) !&#x3D; 0)</span><br><span class="line">        goto bad_fork_cleanup_proc;</span><br><span class="line">    &#x2F;&#x2F; 文件系统直接指向父进程</span><br><span class="line">    if (copy_fs(CLONE_FS, proc) !&#x3D; 0)</span><br><span class="line">        goto bad_fork_cleanup_kstack;</span><br><span class="line">    &#x2F;&#x2F; mm 直接指向父进程， 一个用户进程有1MB的栈空间</span><br><span class="line">    &#x2F;&#x2F; 256页，一个线程给16页，包括原有的主线程的话，能开16个线程</span><br><span class="line">    if (copy_mm(CLONE_VM, proc) !&#x3D; 0)</span><br><span class="line">        goto bad_fork_cleanup_fs;</span><br><span class="line">    &#x2F;&#x2F; !! 注意这个地址不是这个线程的地址，是上一个线程栈的栈底地址</span><br><span class="line">    &#x2F;&#x2F; 给线程分配栈,一个进程16页</span><br><span class="line">    uint32_t thread_stack_top &#x3D; USTACKTOP - (proc-&gt;stack_num) * 16 * PGSIZE;</span><br><span class="line">    &#x2F;&#x2F; 预先给两页给新分配的线程</span><br><span class="line">    assert(pgdir_alloc_page(proc-&gt;mm-&gt;pgdir, thread_stack_top - PGSIZE, PTE_USER) !&#x3D; NULL);</span><br><span class="line">    assert(pgdir_alloc_page(proc-&gt;mm-&gt;pgdir, thread_stack_top - 2 * PGSIZE, PTE_USER) !&#x3D; NULL);</span><br><span class="line">    proc-&gt;tf &#x3D; (struct trapframe *)(proc-&gt;kstack + KSTACKSIZE) - 1;</span><br><span class="line">    struct trapframe *tf &#x3D; proc-&gt;tf;</span><br><span class="line">    memset(tf, 0, sizeof(struct trapframe));</span><br><span class="line">    tf-&gt;tf_cs &#x3D; USER_CS;</span><br><span class="line">    tf-&gt;tf_ds &#x3D; tf-&gt;tf_es &#x3D; tf-&gt;tf_ss &#x3D; USER_DS;</span><br><span class="line">    &#x2F;&#x2F; 把栈往上抬4个字节,才开始放东西，否则栈会越界</span><br><span class="line">    &#x2F;&#x2F; 先放exit的参数为0</span><br><span class="line">    *(uint32_t *)(thread_stack_top - 1 * sizeof(uint32_t)) &#x3D; (uint32_t)0;</span><br><span class="line">    &#x2F;&#x2F; 压入线程函数的参数地址</span><br><span class="line">    *(uint32_t *)(thread_stack_top - 2 * sizeof(uint32_t)) &#x3D; (uint32_t)arg;</span><br><span class="line">    &#x2F;&#x2F; 压入上一个函数的返回地址为 exit ，保证函数结束并没有显式调用 exit 时系统能帮助该线程退出。</span><br><span class="line">    *(uint32_t *)(thread_stack_top - 3 * sizeof(uint32_t)) &#x3D; exit;</span><br><span class="line">    tf-&gt;tf_esp &#x3D; thread_stack_top - 3 * sizeof(uint32_t);</span><br><span class="line">    &#x2F;&#x2F; 设置 eip 指向当前函数开始执行</span><br><span class="line">    tf-&gt;tf_eip &#x3D; fn;</span><br><span class="line">    tf-&gt;tf_eflags &#x3D; FL_IF;</span><br><span class="line">    ret &#x3D; 0;</span><br><span class="line">    tf-&gt;tf_regs.reg_eax &#x3D; 0;</span><br><span class="line">    tf-&gt;tf_eflags |&#x3D; FL_IF;</span><br><span class="line">    &#x2F;&#x2F; context 在调度的时候会弹出 tf 内的寄存器，恢复程序执行</span><br><span class="line">    proc-&gt;context.eip &#x3D; (uintptr_t)forkret;</span><br><span class="line">    proc-&gt;context.esp &#x3D; (uintptr_t)(proc-&gt;tf);</span><br><span class="line">    bool intr_flag;</span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    &#123;</span><br><span class="line">        proc-&gt;pid &#x3D; get_pid();</span><br><span class="line">        hash_proc(proc);</span><br><span class="line">        set_links(proc);</span><br><span class="line">    &#125;</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line">    wakeup_proc(proc);</span><br><span class="line">    &#x2F;&#x2F; 重新设置父线程的栈被该子线程占用</span><br><span class="line">    father-&gt;stack[proc-&gt;stack_num] &#x3D; proc-&gt;pid;</span><br><span class="line">    ret &#x3D; proc-&gt;pid;</span><br><span class="line">fork_out:</span><br><span class="line">    return ret;</span><br><span class="line">bad_fork_cleanup_fs: &#x2F;&#x2F;for LAB8</span><br><span class="line">    put_fs(proc);</span><br><span class="line">bad_fork_cleanup_kstack:</span><br><span class="line">    put_kstack(proc);</span><br><span class="line">bad_fork_cleanup_proc:</span><br><span class="line">    kfree(proc);</span><br><span class="line">    goto fork_out;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>注意因为用户有可能不会在线程执行的函数结束返回时调用 exit，所以 clone 的一个任务就是帮助用户将线程栈栈底的返回地址设置为 sys_exit (不是直接 do_exit 因为该线程执行在用户态，只有通过系统调用才能执行内核态代码)<br>最后的线程栈栈帧如图所示</p>
+<p><img src="https://uploader.shimo.im/f/lKtHA4uomBRs6JTi.png!thumbnail?fileGuid=ZzkLVnaGVeiM443Q" alt="图片"></p>
+<h4 id="祖宗线程-exit-时守护"><a href="#祖宗线程-exit-时守护" class="headerlink" title="祖宗线程 exit 时守护"></a>祖宗线程 exit 时守护</h4><p>若祖宗线程没有调用 join 来等待子线程结束工作，祖宗线程会直接退出，虽然这样内存空间的引用计数不为 0，不会释放他们共用的内存空间，剩余线程还能继续执行，但是所有栈的分配信息都存在祖宗线程的 PCB 表中，如果祖宗线程一旦释放，子进程再想调用 phthread_create 新建子进程会导致失败。于是必须在祖宗线程调用 sys_exit 时守护所有子线程退出后祖宗线程才能退出。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">static int</span><br><span class="line">sys_exit(uint32_t arg[]) &#123;</span><br><span class="line">    int error_code &#x3D; (int)arg[0];</span><br><span class="line">    if (is_ancestral_thread(current)) &#x2F;&#x2F;祖宗进程只有在所有子线程全部释放后才能退出</span><br><span class="line">        while (current_have_kid())    &#x2F;&#x2F;只要有儿子就等着</span><br><span class="line">            do_wait(0, NULL);</span><br><span class="line">    return do_exit(error_code);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h4 id="线程一致性维护"><a href="#线程一致性维护" class="headerlink" title="线程一致性维护"></a>线程一致性维护</h4><p>linux 上的线程就是基于轻量级进程, 由用户态的 pthread 库实现的.使用 pthread 以后, 在用户看来, 每一个 task_struct 就对应一个线程, 而一组线程以及它们所共同引用的一组资源就是一个进程。但是, 一组线程并不仅仅是引用同一组资源就够了, 它们还必须被视为一个整体。当”进程”收到一个致命信号(比如由于段错误收到 SIGSEGV 信号), 对应的这一组 task_struct 将全部退出。这是 POSIX 对线程实现提出的要求，如果某个线程”挂”了, 整个进程还在若无其事地运行着, 可能会出现很多的不一致状态. 进程将不是一个整体, 而线程也不能称为线程。</p>
+<p>在 uCore 中我们也实现了该线程的一致性</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line">case T_PGFLT:  &#x2F;&#x2F;page fault</span><br><span class="line">    if ((ret &#x3D; pgfault_handler(tf)) !&#x3D; 0) &#123;</span><br><span class="line">        print_trapframe(tf);</span><br><span class="line">        if (current &#x3D;&#x3D; NULL) &#123;</span><br><span class="line">            panic(&quot;handle pgfault failed. ret&#x3D;%d\n&quot;, ret);</span><br><span class="line">        &#125;</span><br><span class="line">        else &#123;</span><br><span class="line">            if (trap_in_kernel(tf)) &#123;</span><br><span class="line">                panic(&quot;handle pgfault failed in kernel mode. ret&#x3D;%d\n&quot;, ret);</span><br><span class="line">            &#125;</span><br><span class="line">            cprintf(&quot;killed by kernel.\n&quot;);</span><br><span class="line">            &#x2F;&#x2F; panic(&quot;handle user mode pgfault failed. ret&#x3D;%d\n&quot;, ret);</span><br><span class="line">            kill_all_thread();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    break;</span><br></pre></td></tr></table></figure>
+<p>比如有一个线程缺页异常的话，对应的这组进程都会被杀死。</p>
+<h2 id="CFS进程调度实现"><a href="#CFS进程调度实现" class="headerlink" title="CFS进程调度实现"></a>CFS进程调度实现</h2><p>其他两个调度器的实现比较简单，这里主要研究CFS调度器是如何实现的</p>
+<h3 id="CFS调度器介绍"><a href="#CFS调度器介绍" class="headerlink" title="CFS调度器介绍"></a>CFS调度器介绍</h3><p>cfs 定义了一种新的模型，它给 cfs_rq（cfs的run queue）中的每一个进程安排一个虚拟时钟，vruntime。如果一个进程得以执行，随着时间的增长（也就是一个个tick的到来），其vruntime将不断增大。没有得到执行的进程vruntime不变。而调度器总是选择vruntime跑得最慢的那个进程来执行。这就是所谓的“完全公平”。为了区别不同优先级的进程，优先级高的进程vruntime增长得慢，以至于它可能得到更多的运行机会。</p>
+<p>如果分配给进程的运行时间不等于实际运行的时间时：CFS的思想就是让每个调度实体的vruntime增加速度不同，权重越大的增加的越慢，这样高优先级进程就能获得更多的cpu执行时间，而vruntime值较小者也得到执行。</p>
+<p>每一个进程或者调度组都对应一个调度的实体，每一个进程都通过调度实体与CFS运行对列建立联系，每次进行CFS调度的时候都会在CFS运行对列红黑树中选择一个进程（vruntime值较小者）。cfs_rq代表CFS运行对列，它可以找到对应的红黑树。进程task_struct ，可以找到对应的调度实体。调度实体sched_entity对应运行对列红黑树上的一个节点。</p>
+<h3 id="调度器实现"><a href="#调度器实现" class="headerlink" title="调度器实现"></a>调度器实现</h3><p>运行队列中的进程/线程会频繁进行插入和删除。为了效率考虑，CFS调度队列我们需要使用红黑树来实现，每次选择最小vruntime的节点执行（即选择这颗红黑树上的最左节点）将其从这颗红黑树中删除，调度到CPU上执行。因为C语言中没有提供面向对象的编程方法，我们借用linux内核中提供的红黑树的基础库来实现我们自己的cfs红黑树。简单介绍一下linux内核里的红黑树。</p>
+<p>Linux有很多地方用到了红黑树，比如高精度计时器使用红黑树树组织定时请求，EXT3文件系统也使用红黑树树来管理目录，虚拟存储管理系统也有用红黑树树进行VMAs（Virtual Memory Areas）的管理。Linux内核红黑树的实现与传统的实现方式有些不同，它对针对内核对速度的需要做了优化。每一个rb_node节点是嵌入在用RB树进行组织的数据结构中，而不是用rb_node指针进行数据结构的组织。对于CFS运行队列这颗红黑树的节点 cfs_node，我们只要在里面内嵌一个 rb_node 节点再加一个指向该进程PCB的指针，我们就可以利用linux提供的红黑树操作函数来封装出一个我们自己的CFS调度队列。</p>
+<p>对于一个挂在CFS队列里面的进程，我们需要实现的方法有</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="meta-keyword">ifndef</span> KERN_SCHEDULE_CFS_RBTREE_H</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> KERN_SCHEDULE_CFS_RBTREE_H</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">include</span></span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">cfs_node</span></span></span><br><span class="line"><span class="class">&#123;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">rb_node</span> <span class="title">node</span>;</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">proc_struct</span> *<span class="title">proc</span>;</span></span><br><span class="line">&#125;;</span><br><span class="line"><span class="function">struct cfs_node *<span class="title">cfs_search</span><span class="params">(struct rb_root *root, struct proc_struct *proc)</span></span>;</span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">cfs_insert</span><span class="params">(struct rb_root *root, struct proc_struct *proc)</span></span>;</span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">cfs_node_free</span><span class="params">(struct cfs_node *node)</span></span>;</span><br><span class="line"><span class="function">struct proc_struct * <span class="title">cfs_find_min</span><span class="params">(struct rb_root *root)</span></span>;</span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">compare_cfs_node</span><span class="params">(struct proc_struct *a, struct proc_struct *b)</span></span>;</span><br><span class="line"><span class="meta">#<span class="meta-keyword">endif</span></span></span><br></pre></td></tr></table></figure>
+<p>一个节点的插入和删除，找最小（就是找最左子节点），还有节点值的大小比较。这里值得关注的函数就是节点值大小比较。在 linux 中的红黑树中，若两个节点的 value 大小相等会放弃插入，但是连续插入的两个 vruntime 很可能相同，针对这种情况，重新规定红黑树的排序规则</p>
+<p>vruntime 不同时比较 vruntime ，vruntime大者大。vruntime 相同时比较 pid ，pid大者大.   因为树里面不可能有两个相同的进程,所以该排序可以保证线序关系。</p>
+<p>下面简单的去实现这个红黑树节点的方法</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">compare_cfs_node</span><span class="params">(struct proc_struct *a, struct proc_struct *b)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">  <span class="keyword">if</span> (a-&gt;vruntime != b-&gt;vruntime)</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="keyword">if</span> (a-&gt;vruntime &gt; b-&gt;vruntime)</span><br><span class="line">      <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">      <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">else</span></span><br><span class="line">  &#123;</span><br><span class="line">    <span class="keyword">if</span> (a-&gt;pid &gt; b-&gt;pid)</span><br><span class="line">      <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">      <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function">struct cfs_node *<span class="title">cfs_search</span><span class="params">(struct rb_root *root, struct proc_struct *proc)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">rb_node</span> *<span class="title">node</span> =</span> root-&gt;rb_node;</span><br><span class="line">  <span class="keyword">while</span> (node)</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">cfs_node</span> *<span class="title">data</span> =</span> container_of(node, struct cfs_node, node);</span><br><span class="line">    <span class="keyword">if</span> (data-&gt;proc-&gt;pid == proc-&gt;pid)</span><br><span class="line">      <span class="keyword">return</span> data;</span><br><span class="line">    <span class="keyword">if</span> (compare_cfs_node(data-&gt;proc, proc))</span><br><span class="line">      node = node-&gt;rb_left;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">      node = node-&gt;rb_right;</span><br><span class="line">   &#125;</span><br><span class="line">  <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">cfs_insert</span><span class="params">(struct rb_root *root, struct proc_struct *proc)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">cfs_node</span> *<span class="title">data</span> =</span> (struct cfs_node *)kmalloc(<span class="keyword">sizeof</span>(struct cfs_node));</span><br><span class="line">  data-&gt;proc = proc;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">rb_node</span> **<span class="title">new</span> =</span> &amp;(root-&gt;rb_node), *parent = <span class="literal">NULL</span>;</span><br><span class="line">  <span class="comment">/* Figure out where to put new node */</span> </span><br><span class="line">  <span class="keyword">while</span> (<span class="keyword">new</span>)</span><br><span class="line">  &#123;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">cfs_node</span> <span class="title">this</span> =</span> container_of(<span class="keyword">new</span>, struct cfs_node, node);</span><br><span class="line">    <span class="keyword">int</span> result = compare_cfs_node(data-&gt;proc, <span class="keyword">this</span>-&gt;proc);</span><br><span class="line">    parent = *<span class="keyword">new</span>;</span><br><span class="line">    <span class="keyword">if</span> (result &lt; <span class="number">0</span>)</span><br><span class="line">      <span class="keyword">new</span> = &amp;((*<span class="keyword">new</span>)-&gt;rb_left);</span><br><span class="line">    <span class="keyword">else</span> <span class="keyword">if</span> (result &gt; <span class="number">0</span>)</span><br><span class="line">      <span class="keyword">new</span> = &amp;((*<span class="keyword">new</span>)-&gt;rb_right);</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">      <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">/* Add new node and rebalance tree. */</span></span><br><span class="line">  rb_link_node(&amp;data-&gt;node, parent, <span class="keyword">new</span>);</span><br><span class="line">  rb_insert_color(&amp;data-&gt;node, root);</span><br><span class="line">  <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function">struct proc_struct *<span class="title">cfs_find_min</span><span class="params">(struct rb_root *root)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">rb_node</span> *<span class="title">node</span> =</span> root-&gt;rb_node;</span><br><span class="line">  <span class="keyword">if</span> (node == <span class="literal">NULL</span>)</span><br><span class="line">    <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">  <span class="keyword">while</span> (node-&gt;rb_left)</span><br><span class="line">    node = node-&gt;rb_left;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">cfs_node</span> *<span class="title">data</span> =</span> container_of(node, struct cfs_node, node);</span><br><span class="line">  <span class="keyword">return</span> data-&gt;proc;</span><br><span class="line">&#125;</span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">cfs_node_free</span><span class="params">(struct cfs_node *node)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">  <span class="keyword">if</span> (node != <span class="literal">NULL</span>)</span><br><span class="line">  &#123;</span><br><span class="line">  node-&gt;proc = <span class="literal">NULL</span>;</span><br><span class="line">  kfree(node);</span><br><span class="line">  node = <span class="literal">NULL</span>;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>下面开始实现CFS调度器</p>
+<p>首先是调度器初始化函数, 初始化红黑树根节点，并设置调度队列里面的进程数量为0</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">void</span></span><br><span class="line">cfs_init(struct run_queue *rq)</span><br><span class="line">&#123;</span><br><span class="line">  list_init(&amp;(rq-&gt;run_list));</span><br><span class="line">  rq-&gt;cfs_rb_tree = RB_ROOT;</span><br><span class="line">  rq-&gt;proc_num = <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>之后是插入进程，将进程插入红黑树，并且增加该进程里面的进程数量</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">void</span></span><br><span class="line">cfs_enqueue(struct run_queue *rq, struct proc_struct *proc)</span><br><span class="line">&#123;</span><br><span class="line">  cfs_insert(&amp;(rq-&gt;cfs_rb_tree), proc);</span><br><span class="line">  <span class="keyword">if</span> (proc-&gt;time_slice == <span class="number">0</span> || proc-&gt;time_slice &gt; rq-&gt;max_time_slice)</span><br><span class="line">    proc-&gt;time_slice = rq-&gt;max_time_slice;</span><br><span class="line">  proc-&gt;rq = rq;</span><br><span class="line">  rq-&gt;proc_num++;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>然后是把一个待运行的进程从运行队列里面出队，根据PCB找到CFS节点数据结构的位置。销毁创建的CFS节点，减少进程计数。</p>
+<figure class="highlight c++"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">void</span></span><br><span class="line">cfs_dequeue(struct run_queue *rq, struct proc_struct *proc)</span><br><span class="line">&#123;</span><br><span class="line">  <span class="class"><span class="keyword">struct</span> <span class="title">cfs_node</span> *<span class="title">data</span> =</span> cfs_search(&amp;(rq-&gt;cfs_rb_tree), proc);</span><br><span class="line">  <span class="keyword">if</span> (data)</span><br><span class="line">  &#123;</span><br><span class="line">    rb_erase(&amp;data-&gt;node, &amp;(rq-&gt;cfs_rb_tree));</span><br><span class="line">    cfs_node_free(data);</span><br><span class="line">    rq-&gt;proc_num--;</span><br><span class="line">  &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>然后是每一次时钟中断的调用，这里是我们实现的时候与 linux 实现不一样的地方。在标准linux 的实现中，若当前运行的 proc 的 vruntime 已经不是队列里面最小的了（实际上会导致频繁调度，所以一般设置一个阈值）超过这个限制会直接触发调度，但是我们为了简单和一定程度上的效率考虑只是通过 vruntime 进行选择，而不是使用 vruntime 进行抢占调度。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">static void</span><br><span class="line">cfs_proc_tick(struct run_queue *rq, struct proc_struct *proc)</span><br><span class="line">&#123;</span><br><span class="line">  &#x2F;&#x2F; 实际上CFS的实现：若 proc-&gt;vruntime 已经不是队列里面最小的了（实际上会导致频繁调度，所以一般设置一个阈值）</span><br><span class="line">  &#x2F;&#x2F; 超过这个限制会直接触发调度</span><br><span class="line">  &#x2F;&#x2F; 此时的进程不在红黑树中，修改 proc-&gt;vruntime 不会破坏红黑树的性质。 但是还是需要完善上述 CFS</span><br><span class="line">  &#x2F;&#x2F; 仍有运行时间则减少其运行时间，计算虚拟运行时间</span><br><span class="line">  assert(proc-&gt;cfs_prior !&#x3D; 0);</span><br><span class="line">  proc-&gt;vruntime +&#x3D; proc-&gt;cfs_prior;</span><br><span class="line">  if (proc-&gt;time_slice &gt; 0)</span><br><span class="line">    proc-&gt;time_slice--;</span><br><span class="line">  &#x2F;&#x2F; 时间片用完则标记该进程需要调度</span><br><span class="line">  if (proc-&gt;time_slice &#x3D;&#x3D; 0)</span><br><span class="line">    proc-&gt;need_resched &#x3D; 1;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="对一些问题的研究"><a href="#对一些问题的研究" class="headerlink" title="对一些问题的研究"></a>对一些问题的研究</h2><h3 id="用户态进程是如何退出的"><a href="#用户态进程是如何退出的" class="headerlink" title="用户态进程是如何退出的"></a>用户态进程是如何退出的</h3><p>以 stackOverflow.c 这个程序为例, 在编译的时候总共涉及 gcc 的调用和 ld 的链接操作</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">gcc -Iuser&#x2F; -fno-builtin -fno-PIC -Wall -ggdb -m32 -gstabs -nostdinc  -fno-stack-protector -Ilibs&#x2F; -Iuser&#x2F;include&#x2F; -Iuser&#x2F;libs&#x2F; -c user&#x2F;stackOverFlow.c -o obj&#x2F;user&#x2F;stackOverFlow.o</span><br><span class="line">ld -m    elf_i386 -nostdlib -T tools&#x2F;user.ld -o obj&#x2F;__user_stackOverFlow.out  obj&#x2F;user&#x2F;libs&#x2F;panic.o obj&#x2F;user&#x2F;libs&#x2F;syscall.o obj&#x2F;user&#x2F;libs&#x2F;ulib.o obj&#x2F;user&#x2F;libs&#x2F;semaphore.o obj&#x2F;user&#x2F;libs&#x2F;initcode.o obj&#x2F;user&#x2F;libs&#x2F;file.o obj&#x2F;user&#x2F;libs&#x2F;stdio.o obj&#x2F;user&#x2F;libs&#x2F;dir.o obj&#x2F;user&#x2F;libs&#x2F;umain.o obj&#x2F;user&#x2F;libs&#x2F;pthread.o obj&#x2F;user&#x2F;libs&#x2F;proc.o  obj&#x2F;libs&#x2F;rbtree.o obj&#x2F;libs&#x2F;string.o obj&#x2F;libs&#x2F;printfmt.o obj&#x2F;libs&#x2F;hash.o obj&#x2F;libs&#x2F;rand.o obj&#x2F;user&#x2F;stackOverFlow.o</span><br></pre></td></tr></table></figure>
+<p>之所以选这个程序是因为简单，使用 objdump 反汇编第一条 gcc 编译指令执行完毕生成的 stackOverFlow.o 文件的 text 段如下所示：<br>注意现在还没有到链接的阶段，所有 text 段代码的起始位置都是 0 地址处：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line">Disassembly of section .text:</span><br><span class="line">00000000 &lt;loop&gt;:</span><br><span class="line">   0:    f3 0f 1e fb             endbr32</span><br><span class="line">   4:    55                      push   %ebp</span><br><span class="line">   5:    89 e5                   mov    %esp,%ebp</span><br><span class="line">   7:    83 ec 08                sub    $0x8,%esp</span><br><span class="line">   a:    e8 fc ff ff ff          call   b &lt;loop+0xb&gt;</span><br><span class="line">   f:    90                      nop</span><br><span class="line">  10:    c9                      leave</span><br><span class="line">  11:    c3                      ret</span><br><span class="line">00000012 &lt;main&gt;:</span><br><span class="line">  12:    f3 0f 1e fb             endbr32</span><br><span class="line">  16:    55                      push   %ebp</span><br><span class="line">  17:    89 e5                   mov    %esp,%ebp</span><br><span class="line">  19:    83 e4 f0                and    $0xfffffff0,%esp</span><br><span class="line">  1c:    e8 fc ff ff ff          call   1d &lt;main+0xb&gt;</span><br><span class="line">  21:    b8 00 00 00 00          mov    $0x0,%eax</span><br><span class="line">  26:    c9                      leave</span><br><span class="line">  27:    c3                      ret</span><br></pre></td></tr></table></figure>
+<p>下一条链接指令会将 user/lib 下的所有 .o 文件与 stackOverFlow.o 一起进行链接操作<br>其中链接的 obj/user/libs/initcode.o 是一段汇编代码</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line">.text</span><br><span class="line">.globl _start</span><br><span class="line">_start:</span><br><span class="line">    # set ebp for backtrace</span><br><span class="line">    movl $0x0, %ebp</span><br><span class="line">    # load argc and argv</span><br><span class="line">    movl (%esp), %ebx</span><br><span class="line">    lea 0x4(%esp), %ecx</span><br><span class="line"></span><br><span class="line">    # move down the esp register</span><br><span class="line">    # since it may cause page fault in backtrace</span><br><span class="line">    subl $0x20, %esp</span><br><span class="line">    # save argc and argv on stack</span><br><span class="line">    pushl %ecx</span><br><span class="line">    pushl %ebx</span><br><span class="line">    # call user-program function</span><br><span class="line">    call umain</span><br><span class="line">1:  jmp 1b</span><br></pre></td></tr></table></figure>
+<p>结合链接脚本中的<code>ENTRY(_start)</code>可知在链接完成后 initcode.o 是最先被执行的，该段汇编指令调用了 umain 函数，定义在 umain.o 里。<br>umain 打开了输入输出流两个文件描述符，并调用函数 main （注意：umain 上面的 main 函数只是声明，在链接的时候会把 stackOverFlow.o 里面的 main 函数实现给链接上，<strong>main 函数执行完成后 umain 调用系统调用 exit 退出</strong>）</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line">int main(int argc, char *argv[]);</span><br><span class="line">static int</span><br><span class="line">initfd(int fd2, const char *path, uint32_t open_flags) &#123;</span><br><span class="line">    int fd1, ret;</span><br><span class="line">    if ((fd1 &#x3D; open(path, open_flags)) &lt; 0) &#123;</span><br><span class="line">        return fd1;</span><br><span class="line">    &#125;</span><br><span class="line">    if (fd1 !&#x3D; fd2) &#123;</span><br><span class="line">        close(fd2);</span><br><span class="line">        ret &#x3D; dup2(fd1, fd2);</span><br><span class="line">        close(fd1);</span><br><span class="line">    &#125;</span><br><span class="line">    return ret;</span><br><span class="line">&#125;</span><br><span class="line">void</span><br><span class="line">umain(int argc, char *argv[]) &#123;</span><br><span class="line">    int fd;</span><br><span class="line">    if ((fd &#x3D; initfd(0, &quot;stdin:&quot;, O_RDONLY)) &lt; 0) &#123;</span><br><span class="line">        warn(&quot;open &lt;stdin&gt; failed: %e.\n&quot;, fd);</span><br><span class="line">    &#125;</span><br><span class="line">    if ((fd &#x3D; initfd(1, &quot;stdout:&quot;, O_WRONLY)) &lt; 0) &#123;</span><br><span class="line">        warn(&quot;open &lt;stdout&gt; failed: %e.\n&quot;, fd);</span><br><span class="line">    &#125;</span><br><span class="line">    int ret &#x3D; main(argc, argv);</span><br><span class="line">    exit(ret);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>截取几段链接完成后的反汇编代码</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">Disassembly of section .text:</span><br><span class="line">00800020 &lt;__panic&gt;:</span><br><span class="line">#include &lt;stdio.h&gt;</span><br><span class="line">#include &lt;ulib.h&gt;</span><br><span class="line">#include &lt;error.h&gt;</span><br><span class="line">void</span><br><span class="line">__panic(const char *file, int line, const char *fmt, ...) &#123;</span><br><span class="line">  800020:    f3 0f 1e fb             endbr32</span><br><span class="line">  800024:    55                      push   %ebp</span><br><span class="line">  800025:    89 e5                   mov    %esp,%ebp</span><br><span class="line">  800027:    83 ec 18                sub    $0x18,%esp</span><br></pre></td></tr></table></figure>
+<p>可以看到代码段真如 ld 脚本规定的从 0x00800020 地址处开始</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">0080066b &lt;_start&gt;:</span><br><span class="line">.text</span><br><span class="line">.globl _start</span><br><span class="line">_start:</span><br><span class="line">    # set ebp for backtrace</span><br><span class="line">    movl $0x0, %ebp</span><br><span class="line">  80066b:    bd 00 00 00 00          mov    $0x0,%ebp</span><br><span class="line">    # load argc and argv</span><br><span class="line">    movl (%esp), %ebx</span><br><span class="line">  800670:    8b 1c 24                mov    (%esp),%ebx</span><br><span class="line">    lea 0x4(%esp), %ecx</span><br><span class="line">  800673:    8d 4c 24 04             lea    0x4(%esp),%ecx</span><br></pre></td></tr></table></figure>
+<p>最后操作系统在执行这段代码的时候会根据 elf 的格式将 eip 设置为 0x0080066b 从这开始执行。</p>
+<h3 id="为何代码不从-0-地址开始"><a href="#为何代码不从-0-地址开始" class="headerlink" title="为何代码不从 0 地址开始"></a>为何代码不从 0 地址开始</h3><p>The stack, which is usually quite small but could grow quite dramatically in some occasions. The stack grows down, and when the stack is full, we really want the process to predictably crash rather than overwriting some data. So there had to be a wide area for the stack, with, at the low end of that area, an unmapped page. And lo! There is an unmapped page at address zero, to catch null pointer dereferences. Hence it was defined that the stack would get the first 128 MB of address space, except for the first page. This means that the code had to go after those 128 MB, at an address similar to 0x080xxxxx.</p>
+<p>As Michael points out, “losing” 128 MB of address space was no big deal because the address space was very large with regards to what could be actually used. At that time, the Linux kernel was limiting the address space for a single process to 1 GB, over a maximum of 4 GB allowed by the hardware, and that was not considered to be a big issue.</p>
+<h3 id="第一个用户进程-sh"><a href="#第一个用户进程-sh" class="headerlink" title="第一个用户进程 sh"></a>第一个用户进程 sh</h3><p>第一个用户进程是从<code>int pid = kernel_thread(user_main, NULL, 0);</code>而来。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">int</span><br><span class="line">kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) &#123;</span><br><span class="line">    struct trapframe tf;</span><br><span class="line">    memset(&amp;tf, 0, sizeof(struct trapframe));</span><br><span class="line">    tf.tf_cs &#x3D; KERNEL_CS;</span><br><span class="line">    tf.tf_ds &#x3D; tf.tf_es &#x3D; tf.tf_ss &#x3D; KERNEL_DS;</span><br><span class="line">    tf.tf_regs.reg_ebx &#x3D; (uint32_t)fn;</span><br><span class="line">    tf.tf_regs.reg_edx &#x3D; (uint32_t)arg;</span><br><span class="line">    tf.tf_eip &#x3D; (uint32_t)kernel_thread_entry;</span><br><span class="line">    return do_fork(clone_flags | CLONE_VM, 0, &amp;tf);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>送了这个即将执行的 user_main 函数一个内核栈帧和一个 kernel_thread_entry 函数（该函数定义 user_main 执行完成后会自动调用 do_wait） 然后就把 user_main 进程给 fork 出来了（此时还在内核态）。<br>最后 user_main 进程执行了 user_main 函数，引发一个中断调用 exec，把这个进程掏空，该进程变成了进程 sh ，注意在从文件系统载入代码的 load_icode 函数中，在中断栈帧中把 user_main 的段子换成了用户态的段子，只要中断一返回，该进程回到了用户态</p>
+<p>虽然上面定义了 user_main 执行完成后会自动调用 do_wait ，但一个 exec 调用过后， eip 指针的值已经被修改，sh 已经和 kernel_thread_entry 没关系了。 所以最后 sh 若要退出需要通过中断调用（用户进程也没法直接执行 do_wait）, 具体如何进行的中断调用仍需要研究。</p>
+<h3 id="对-top-指令的结果分析"><a href="#对-top-指令的结果分析" class="headerlink" title="对 top 指令的结果分析"></a>对 top 指令的结果分析</h3><p><img src="https://uploader.shimo.im/f/DlKvoeiCUVwBtK9l.png!thumbnail?fileGuid=ZzkLVnaGVeiM443Q" alt="图片"></p>
+<p>进程数量等于 os 内的全局变量 nr_process 这个变量包含了 idle 进程所以总共 4 个没问题。</p>
+<p>init 进程从其创建，第一次执行 do_wait 的时候，就因为其有 user_main（该进程创造 sh 后结束） 这个进程而陷入了 sleep ，只要其子进程（sh）不死（就是变 Zombie，sleep 都没用），永远不会唤醒该 init 进程来回收资源（其他父线程托孤的时候可能唤醒 init）。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">while (do_wait(0, NULL) &#x3D;&#x3D; 0) &#123;</span><br><span class="line">    schedule();</span><br><span class="line">&#125;</span><br><span class="line">if (haskid) &#123;</span><br><span class="line">    current-&gt;state &#x3D; PROC_SLEEPING;</span><br><span class="line">    current-&gt;wait_state &#x3D; WT_CHILD;</span><br><span class="line">    schedule();</span><br><span class="line">    if (current-&gt;flags &amp; PF_EXITING) &#123;</span><br><span class="line">        do_exit(-E_KILLED);</span><br><span class="line">    &#125;</span><br><span class="line">    goto repeat;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>idle 的调度是被特判过的, 运行队列里面没有 idleproc ， OS 在没有进程可供调度的时候选择进程 idleproc，自然其 vruntime 不会被计算</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">static void</span><br><span class="line">sched_class_proc_tick(struct proc_struct *proc) &#123;</span><br><span class="line">    if (proc !&#x3D; idleproc) &#123;</span><br><span class="line">        sched_class-&gt;proc_tick(rq, proc);</span><br><span class="line">    &#125;</span><br><span class="line">    else &#123;</span><br><span class="line">        proc-&gt;need_resched &#x3D; 1;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>sh 是在等待输入的函数<code>dev_stdin_read</code>主动调用<code>schedule()</code>放弃时间片，所以 在间隔两次输入<code>top</code>指令的中间，sh 一直在等待输入，并没有被调度，所以两次间隔后 idle 的调度次数会巨多因为除了 idle ，ucore 没有其他进程可供调度，但 vruntime 是 0（因为特判），sh 的 vruntime 可能会有小幅 提升因为调用了 top ，中间处理会给 sh 时间，但一旦 top 开始执行， sh 又会因为等 top 执行完毕被挂起，top 执行完成后又在等输入。。。。</p>
+<h3 id="对用户栈的研究"><a href="#对用户栈的研究" class="headerlink" title="对用户栈的研究"></a>对用户栈的研究</h3><p>每个用户进程都设置了用户栈为，栈顶是 USTACKTOP - 1 （第一个地址不是），栈大小是 USTACKSIZE 。调用 mm_mmap 函数建立用户栈的 vma 结构，明确用户栈的位置在用户虚空间的顶端，大小为 256 个页，即 1MB。但这个只是设置了 vma 。下面调用 pgdir_alloc_page 分配了 4 页（16KB）的栈空间给用户。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">vm_flags &#x3D; VM_READ | VM_WRITE | VM_STACK;</span><br><span class="line">if ((ret &#x3D; mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) !&#x3D; 0) &#123;</span><br><span class="line">    goto bad_cleanup_mmap;</span><br><span class="line">&#125;</span><br><span class="line">assert(pgdir_alloc_page(mm-&gt;pgdir, USTACKTOP-PGSIZE , PTE_USER) !&#x3D; NULL);</span><br><span class="line">assert(pgdir_alloc_page(mm-&gt;pgdir, USTACKTOP-2*PGSIZE , PTE_USER) !&#x3D; NULL);</span><br><span class="line">assert(pgdir_alloc_page(mm-&gt;pgdir, USTACKTOP-3*PGSIZE , PTE_USER) !&#x3D; NULL);</span><br><span class="line">assert(pgdir_alloc_page(mm-&gt;pgdir, USTACKTOP-4*PGSIZE , PTE_USER) !&#x3D; NULL);</span><br></pre></td></tr></table></figure>
+<p>一旦这 4KB 的栈被用完了，那么就会引起缺页异常。</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">struct vma_struct *vma &#x3D; find_vma(mm, addr);</span><br><span class="line">if (vma &#x3D;&#x3D; NULL || vma-&gt;vm_start &gt; addr) &#123;</span><br><span class="line">        cprintf(&quot;not valid addr %x, and  can not find it in vma\n&quot;, addr);</span><br><span class="line">        goto failed;</span><br><span class="line">    &#125;</span><br><span class="line">ptep &#x3D; get_pte(mm-&gt;pgdir, addr, 1))</span><br><span class="line">pgdir_alloc_page(mm-&gt;pgdir, addr, perm)</span><br></pre></td></tr></table></figure>
+<p>因为 vma 里写的是 1MB 空间，实际只分配给了 16KB ，缺页的时候只要地址在 1MB 的范围内，那么 通过缺页的地址是找得到对应的 vma 的，说明这个是个合法地址，os 会自动根据缺页地址新建页表项并分配 page 。当栈的使用超过 1MB，就会找不到 vma 直接报错，这个行为目前会直接崩掉内核，可用考虑后续的优化。</p>
+<h3 id="时钟中断"><a href="#时钟中断" class="headerlink" title="时钟中断"></a>时钟中断</h3><figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;&#x2F;设置时钟每秒中断100次</span><br><span class="line">    outb(IO_TIMER1, TIMER_DIV(100) % 256);</span><br><span class="line">    outb(IO_TIMER1, TIMER_DIV(100) &#x2F; 256);</span><br><span class="line">&#x2F;&#x2F; 通过中断控制器使能时钟中断</span><br><span class="line">    pic_enable(IRQ_TIMER);</span><br></pre></td></tr></table></figure>
+<p>每 1s 中断 100 次则一个时间片的时长为 10ms ， usleep(100) 睡眠 1s。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/01/24/Lab3/" rel="prev" title="Lab3 实验报告">
+      <i class="fa fa-chevron-left"></i> Lab3 实验报告
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%95%B4%E4%BD%93%E8%AE%BE%E8%AE%A1"><span class="nav-number">1.</span> <span class="nav-text">整体设计</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%94%A8%E6%88%B7%E6%80%81%E5%86%85%E6%A0%B8%E8%BF%9B%E7%A8%8B%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.</span> <span class="nav-text">用户态内核进程实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#linux-%E5%AE%9E%E7%8E%B0%E5%8F%82%E8%80%83"><span class="nav-number">2.1.</span> <span class="nav-text">linux 实现参考</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#uCore-%E5%AE%9E%E7%8E%B0"><span class="nav-number">2.2.</span> <span class="nav-text">uCore 实现</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#PCB-%E6%94%AF%E6%8C%81"><span class="nav-number">2.2.1.</span> <span class="nav-text">PCB 支持</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#clone-%E8%B0%83%E7%94%A8"><span class="nav-number">2.2.2.</span> <span class="nav-text">clone 调用</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%A5%96%E5%AE%97%E7%BA%BF%E7%A8%8B-exit-%E6%97%B6%E5%AE%88%E6%8A%A4"><span class="nav-number">2.2.3.</span> <span class="nav-text">祖宗线程 exit 时守护</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%BA%BF%E7%A8%8B%E4%B8%80%E8%87%B4%E6%80%A7%E7%BB%B4%E6%8A%A4"><span class="nav-number">2.2.4.</span> <span class="nav-text">线程一致性维护</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#CFS%E8%BF%9B%E7%A8%8B%E8%B0%83%E5%BA%A6%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.</span> <span class="nav-text">CFS进程调度实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#CFS%E8%B0%83%E5%BA%A6%E5%99%A8%E4%BB%8B%E7%BB%8D"><span class="nav-number">3.1.</span> <span class="nav-text">CFS调度器介绍</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E8%B0%83%E5%BA%A6%E5%99%A8%E5%AE%9E%E7%8E%B0"><span class="nav-number">3.2.</span> <span class="nav-text">调度器实现</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AF%B9%E4%B8%80%E4%BA%9B%E9%97%AE%E9%A2%98%E7%9A%84%E7%A0%94%E7%A9%B6"><span class="nav-number">4.</span> <span class="nav-text">对一些问题的研究</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%94%A8%E6%88%B7%E6%80%81%E8%BF%9B%E7%A8%8B%E6%98%AF%E5%A6%82%E4%BD%95%E9%80%80%E5%87%BA%E7%9A%84"><span class="nav-number">4.1.</span> <span class="nav-text">用户态进程是如何退出的</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%BA%E4%BD%95%E4%BB%A3%E7%A0%81%E4%B8%8D%E4%BB%8E-0-%E5%9C%B0%E5%9D%80%E5%BC%80%E5%A7%8B"><span class="nav-number">4.2.</span> <span class="nav-text">为何代码不从 0 地址开始</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AC%AC%E4%B8%80%E4%B8%AA%E7%94%A8%E6%88%B7%E8%BF%9B%E7%A8%8B-sh"><span class="nav-number">4.3.</span> <span class="nav-text">第一个用户进程 sh</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AF%B9-top-%E6%8C%87%E4%BB%A4%E7%9A%84%E7%BB%93%E6%9E%9C%E5%88%86%E6%9E%90"><span class="nav-number">4.4.</span> <span class="nav-text">对 top 指令的结果分析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%AF%B9%E7%94%A8%E6%88%B7%E6%A0%88%E7%9A%84%E7%A0%94%E7%A9%B6"><span class="nav-number">4.5.</span> <span class="nav-text">对用户栈的研究</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%97%B6%E9%92%9F%E4%B8%AD%E6%96%AD"><span class="nav-number">4.6.</span> <span class="nav-text">时钟中断</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">lagrange</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">lagrange</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

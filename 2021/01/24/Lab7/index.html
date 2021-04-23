@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Lab7定时器 Timertimer_t 结构用于存储一个定时器所需要的相关数据，包括倒计时时间以及所绑定的进程。 1234567static list_entry_t timer_list;typedef struct &amp;#123;    unsigned int expires;       &#x2F;&#x2F;the expire time    struct proc_struct *proc;   &#x2F;&#x2F;">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Lab7 实验报告">
+<meta property="og:url" content="http://example.com/2021/01/24/Lab7/index.html">
+<meta property="og:site_name" content="lagrange&#39;s blog">
+<meta property="og:description" content="Lab7定时器 Timertimer_t 结构用于存储一个定时器所需要的相关数据，包括倒计时时间以及所绑定的进程。 1234567static list_entry_t timer_list;typedef struct &amp;#123;    unsigned int expires;       &#x2F;&#x2F;the expire time    struct proc_struct *proc;   &#x2F;&#x2F;">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-01-24T10:47:34.000Z">
+<meta property="article:modified_time" content="2021-04-23T00:29:15.975Z">
+<meta property="article:author" content="lagrange">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://example.com/2021/01/24/Lab7/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Lab7 实验报告 | lagrange's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">lagrange's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">what's dead may never die</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档<span class="badge">14</span></a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2021/01/24/Lab7/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="lagrange">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="lagrange's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Lab7 实验报告
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-01-24 10:47:34" itemprop="dateCreated datePublished" datetime="2021-01-24T10:47:34Z">2021-01-24</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2021-04-23 00:29:15" itemprop="dateModified" datetime="2021-04-23T00:29:15Z">2021-04-23</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/OS/" itemprop="url" rel="index"><span itemprop="name">OS</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="Lab7"><a href="#Lab7" class="headerlink" title="Lab7"></a>Lab7</h1><h2 id="定时器-Timer"><a href="#定时器-Timer" class="headerlink" title="定时器 Timer"></a>定时器 Timer</h2><p>timer_t 结构用于存储一个定时器所需要的相关数据，包括倒计时时间以及所绑定的进程。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> <span class="keyword">list_entry_t</span> timer_list;</span><br><span class="line"></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">int</span> expires;       <span class="comment">//the expire time</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">proc_struct</span> *<span class="title">proc</span>;</span>   <span class="comment">//the proc wait in this timer. If the expire time is end, then this proc will be scheduled</span></span><br><span class="line">    <span class="keyword">list_entry_t</span> timer_link;    <span class="comment">//the timer list</span></span><br><span class="line">&#125; <span class="keyword">timer_t</span>;</span><br></pre></td></tr></table></figure>
+<p>add_timer 用于将某个 timer 添加进 timer 列表中。</p>
+<p>处于性能考虑，每个新添加的 timer 都会按照其 expires 属性的大小排列，同时减去上一个 timer 的 expires 属性。一个例子：</p>
+<p>两个尚未添加进列表中的 timer:</p>
+<p>timer1-&gt;expires = 20;<br>timer2-&gt;expires = 38;</p>
+<p>将这两个 timer 添加进列表后:（注意 timer2 的 expires）</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">+------------+       +----------------------+       +--------------------------+</span><br><span class="line">| timer_list | &lt;---&gt; | timer1-&gt;expires &#x3D; 20 | &lt;---&gt; | timer2-&gt;expires &#x3D; 18 !!! |</span><br><span class="line">+------------+       +----------------------+       +--------------------------+</span><br></pre></td></tr></table></figure>
+<p>这样，在更新 timer_list 中的所有 timer 的 expires 时，只需递减链首的第一个 timer 的 expire，即可间接达到所有 timer 的 expires 减一的目的。</p>
+<p>该函数源代码如下</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// add timer to timer_list</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">add_timer</span><span class="params">(<span class="keyword">timer_t</span> *timer)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">bool</span> intr_flag;</span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="keyword">list_entry_t</span> *le = list_next(&amp;timer_list);</span><br><span class="line">        <span class="comment">// 减去每个遍历到的timer的expires</span></span><br><span class="line">        <span class="keyword">while</span> (le != &amp;timer_list) &#123;</span><br><span class="line">            <span class="keyword">timer_t</span> *next = le2timer(le, timer_link);</span><br><span class="line">            <span class="keyword">if</span> (timer-&gt;expires &lt; next-&gt;expires) &#123;</span><br><span class="line">                next-&gt;expires -= timer-&gt;expires;</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            timer-&gt;expires -= next-&gt;expires;</span><br><span class="line">            le = list_next(le);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 将当前timer添加至列表中</span></span><br><span class="line">        list_add_before(le, &amp;(timer-&gt;timer_link));</span><br><span class="line">    &#125;</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>run_timer_list 函数用于更新定时器的时间，并更新当前进程的运行时间片。如果当前定时器的剩余时间结束，则唤醒某个处于 WT_INTERRUPTED 等待状态的进程。有一点在上个函数中提到过：递减 timer_list 中每个 timer 的 expires 时，只递减链头第一个 timer 的 expires。该函数的源代码如下</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// call scheduler to update tick related info, and check the timer is  expired? If expired, then wakup proc</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">run_timer_list</span><span class="params">(<span class="keyword">void</span>)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">bool</span> intr_flag;</span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="keyword">list_entry_t</span> *le = list_next(&amp;timer_list);</span><br><span class="line">        <span class="keyword">if</span> (le != &amp;timer_list) &#123;</span><br><span class="line">            <span class="keyword">timer_t</span> *timer = le2timer(le, timer_link);</span><br><span class="line">            <span class="comment">// 只递减链头timer的expires</span></span><br><span class="line">            timer-&gt;expires --;</span><br><span class="line">            <span class="keyword">while</span> (timer-&gt;expires == <span class="number">0</span>) &#123;</span><br><span class="line">                le = list_next(le);</span><br><span class="line">                <span class="class"><span class="keyword">struct</span> <span class="title">proc_struct</span> *<span class="title">proc</span> =</span> timer-&gt;proc;</span><br><span class="line">                wakeup_proc(proc);</span><br><span class="line">                del_timer(timer);</span><br><span class="line">                <span class="keyword">if</span> (le == &amp;timer_list)</span><br><span class="line">                    <span class="keyword">break</span>;</span><br><span class="line">                timer = le2timer(le, timer_link);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 当前进程执行时间减 1</span></span><br><span class="line">        sched_class_proc_tick(current);</span><br><span class="line">    &#125;</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>将 timer 从 timer_list 中删除的操作比较简单：设置好当前待移除 timer 的下一个 timer-&gt;expires，并将当前 timer 从链表中移除即可。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// del timer from timer_list</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">del_timer</span><span class="params">(<span class="keyword">timer_t</span> *timer)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">bool</span> intr_flag;</span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="keyword">if</span> (!list_empty(&amp;(timer-&gt;timer_link))) &#123;</span><br><span class="line">            <span class="keyword">if</span> (timer-&gt;expires != <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="keyword">list_entry_t</span> *le = list_next(&amp;(timer-&gt;timer_link));</span><br><span class="line">                <span class="keyword">if</span> (le != &amp;timer_list) &#123;</span><br><span class="line">                    <span class="keyword">timer_t</span> *next = le2timer(le, timer_link);</span><br><span class="line">                    next-&gt;expires += timer-&gt;expires;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            list_del_init(&amp;(timer-&gt;timer_link));</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>一个简单的例子，do_sleep 函数</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">do_sleep</span><span class="params">(<span class="keyword">unsigned</span> <span class="keyword">int</span> time)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (time == <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">bool</span> intr_flag;</span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="comment">// 设置定时器</span></span><br><span class="line">        <span class="keyword">timer_t</span> __timer, *timer = timer_init(&amp;__timer, current, time);</span><br><span class="line">        current-&gt;state = PROC_SLEEPING;</span><br><span class="line">        current-&gt;wait_state = WT_TIMER;</span><br><span class="line">        <span class="comment">// 启用定时器</span></span><br><span class="line">        add_timer(timer);</span><br><span class="line">    &#125;</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line">    <span class="comment">// 当前进程放弃CPU资源</span></span><br><span class="line">    schedule();</span><br><span class="line">    <span class="comment">// 时间到点了，删除当前timer</span></span><br><span class="line">    del_timer(timer);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>定时器的用处：定时器可以帮助操作系统在经过一段特定时间后执行一些特殊操作，例如唤醒执行线程。可以说，正是有了定时器，操作系统才有了时间这个概念。</p>
+<h2 id="内核信号量实现"><a href="#内核信号量实现" class="headerlink" title="内核信号量实现"></a>内核信号量实现</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">int</span> pid = kernel_thread(init_main, <span class="literal">NULL</span>, <span class="number">0</span>);</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">int</span></span><br><span class="line">init_main(<span class="keyword">void</span> *arg) &#123;</span><br><span class="line">    ...</span><br><span class="line"><span class="function"><span class="keyword">extern</span> <span class="keyword">void</span> <span class="title">check_sync</span><span class="params">(<span class="keyword">void</span>)</span></span>;</span><br><span class="line">    check_sync();                <span class="comment">// check philosopher sync problem</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">while</span> (do_wait(<span class="number">0</span>, <span class="literal">NULL</span>) == <span class="number">0</span>)</span><br><span class="line">        schedule();</span><br><span class="line">    ...</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">check_sync</span><span class="params">(<span class="keyword">void</span>)</span></span>&#123;</span><br><span class="line">    <span class="keyword">int</span> i;</span><br><span class="line">    <span class="comment">//check semaphore</span></span><br><span class="line">    sem_init(&amp;mutex, <span class="number">1</span>);</span><br><span class="line">    <span class="keyword">for</span>(i=<span class="number">0</span>;i&lt;N;i++)&#123;</span><br><span class="line">        sem_init(&amp;s[i], <span class="number">0</span>);</span><br><span class="line">        <span class="keyword">int</span> pid = kernel_thread(philosopher_using_semaphore, (<span class="keyword">void</span> *)i, <span class="number">0</span>);</span><br><span class="line">        philosopher_proc_sema[i] = find_proc(pid);</span><br><span class="line">        set_proc_name(philosopher_proc_sema[i], <span class="string">&quot;philosopher_sema_proc&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>在第一个内核进程 idleproc 调用 kernel_thread 派生出第二个进程 init 执行 init_main 函数，init_main 函数调用 check_sync 创建了五个哲学家进程，此时进程控制权还在 init 手中，之后 init 执行 do_wait，主动放弃时间片，执行 schedule()，五个哲学家开始活动。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">philosopher_using_semaphore</span><span class="params">(<span class="keyword">void</span> * arg)</span> <span class="comment">/* i：哲学家号码，从0到N-1 */</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="keyword">int</span> i, iter=<span class="number">0</span>;</span><br><span class="line">    i=(<span class="keyword">int</span>)arg;</span><br><span class="line">    cprintf(<span class="string">&quot;I am No.%d philosopher_sema\n&quot;</span>,i);</span><br><span class="line">    <span class="keyword">while</span>(iter++&lt;TIMES)</span><br><span class="line">    &#123; <span class="comment">/* 无限循环 */</span></span><br><span class="line">        cprintf(<span class="string">&quot;Iter %d, No.%d philosopher_sema is thinking\n&quot;</span>,iter,i); <span class="comment">/* 哲学家正在思考 */</span></span><br><span class="line">        do_sleep(SLEEP_TIME);</span><br><span class="line">        phi_take_forks_sema(i);</span><br><span class="line">        <span class="comment">/* 需要两只叉子，或者阻塞 */</span></span><br><span class="line">        cprintf(<span class="string">&quot;Iter %d, No.%d philosopher_sema is eating\n&quot;</span>,iter,i); <span class="comment">/* 进餐 */</span></span><br><span class="line">        do_sleep(SLEEP_TIME);</span><br><span class="line">        phi_put_forks_sema(i);</span><br><span class="line">        <span class="comment">/* 把两把叉子同时放回桌子 */</span></span><br><span class="line">    &#125;</span><br><span class="line">    cprintf(<span class="string">&quot;No.%d philosopher_sema quit\n&quot;</span>,i);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">phi_take_forks_sema</span><span class="params">(<span class="keyword">int</span> i)</span> <span class="comment">/* i：哲学家号码从0到N-1 */</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">        down(&amp;mutex); <span class="comment">/* 进入临界区 */</span></span><br><span class="line">        state_sema[i]=HUNGRY; <span class="comment">/* 记录下哲学家i饥饿的事实 */</span></span><br><span class="line">        phi_test_sema(i); <span class="comment">/* 试图得到两只叉子 */</span></span><br><span class="line">        up(&amp;mutex); <span class="comment">/* 离开临界区 */</span></span><br><span class="line">        down(&amp;s[i]); <span class="comment">/* 如果得不到叉子就阻塞 */</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">phi_put_forks_sema</span><span class="params">(<span class="keyword">int</span> i)</span> <span class="comment">/* i：哲学家号码从0到N-1 */</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">        down(&amp;mutex); <span class="comment">/* 进入临界区 */</span></span><br><span class="line">        state_sema[i]=THINKING; <span class="comment">/* 哲学家进餐结束 */</span></span><br><span class="line">        phi_test_sema(LEFT); <span class="comment">/* 看一下左邻居现在是否能进餐 */</span></span><br><span class="line">        phi_test_sema(RIGHT); <span class="comment">/* 看一下右邻居现在是否能进餐 */</span></span><br><span class="line">        up(&amp;mutex); <span class="comment">/* 离开临界区 */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>上面是哲学家就餐问题的解，但本文主要聚焦于内核信号量的实现，即 sem_init，up，down 这三个函数的实现。</p>
+<h3 id="sem-init"><a href="#sem-init" class="headerlink" title="sem_init"></a>sem_init</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">    <span class="keyword">int</span> value;</span><br><span class="line">    <span class="keyword">wait_queue_t</span> wait_queue;</span><br><span class="line">&#125; <span class="keyword">semaphore_t</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">void</span></span><br><span class="line">sem_init(<span class="keyword">semaphore_t</span> *sem, <span class="keyword">int</span> value) &#123;</span><br><span class="line">    sem-&gt;value = value;</span><br><span class="line">    wait_queue_init(&amp;(sem-&gt;wait_queue));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>sem_init 函数初始化了一个等待队列以及信号量的初值。</p>
+<h3 id="up"><a href="#up" class="headerlink" title="up"></a>up</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span></span><br><span class="line">up(<span class="keyword">semaphore_t</span> *sem) &#123;</span><br><span class="line">    __up(sem, WT_KSEM);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> __noinline <span class="keyword">void</span> __up(<span class="keyword">semaphore_t</span> *sem, <span class="keyword">uint32_t</span> wait_state) &#123;</span><br><span class="line">    <span class="keyword">bool</span> intr_flag;</span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="keyword">wait_t</span> *wait;</span><br><span class="line">        <span class="comment">// 如果没有进程需要唤醒，增加信号量的值</span></span><br><span class="line">        <span class="keyword">if</span> ((wait = wait_queue_first(&amp;(sem-&gt;wait_queue))) == <span class="literal">NULL</span>)</span><br><span class="line">            sem-&gt;value ++;</span><br><span class="line">        <span class="keyword">else</span></span><br><span class="line">            <span class="comment">// 否则唤醒在该信号量等待队列中的第一个进程</span></span><br><span class="line">            wakeup_wait(&amp;(sem-&gt;wait_queue), wait, wait_state, <span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">void</span></span><br><span class="line">wakeup_wait(<span class="keyword">wait_queue_t</span> *<span class="built_in">queue</span>, <span class="keyword">wait_t</span> *wait, <span class="keyword">uint32_t</span> wakeup_flags, <span class="keyword">bool</span> del) &#123;</span><br><span class="line">    <span class="comment">// 在信号量等待队列删除该进程</span></span><br><span class="line">    <span class="keyword">if</span> (del)</span><br><span class="line">        wait_queue_del(<span class="built_in">queue</span>, wait);</span><br><span class="line">    wait-&gt;wakeup_flags = wakeup_flags;</span><br><span class="line">    <span class="comment">// 唤醒进程</span></span><br><span class="line">    wakeup_proc(wait-&gt;proc);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">void</span></span><br><span class="line">wakeup_proc(struct proc_struct *proc) &#123;</span><br><span class="line">    assert(proc-&gt;state != PROC_ZOMBIE);</span><br><span class="line">    <span class="keyword">bool</span> intr_flag;</span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="comment">// 设置进程状态为就绪</span></span><br><span class="line">        <span class="keyword">if</span> (proc-&gt;state != PROC_RUNNABLE) &#123;</span><br><span class="line">            proc-&gt;state = PROC_RUNNABLE;</span><br><span class="line">            proc-&gt;wait_state = <span class="number">0</span>;</span><br><span class="line">            <span class="keyword">if</span> (proc != current) &#123;</span><br><span class="line">                <span class="comment">// 将进程放入调度队列</span></span><br><span class="line">                sched_class_enqueue(proc);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">else</span> &#123;</span><br><span class="line">            warn(<span class="string">&quot;wakeup runnable process.\n&quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="down"><a href="#down" class="headerlink" title="down"></a>down</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">void</span></span><br><span class="line">down(<span class="keyword">semaphore_t</span> *sem) &#123;</span><br><span class="line">    <span class="keyword">uint32_t</span> flags = __down(sem, WT_KSEM);</span><br><span class="line">    assert(flags == <span class="number">0</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> __noinline <span class="keyword">uint32_t</span> __down(<span class="keyword">semaphore_t</span> *sem, <span class="keyword">uint32_t</span> wait_state) &#123;</span><br><span class="line">    <span class="keyword">bool</span> intr_flag;</span><br><span class="line"></span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    <span class="comment">// 如果信号量大于 0</span></span><br><span class="line">    <span class="keyword">if</span> (sem-&gt;value &gt; <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">// 减完信号量直接返回</span></span><br><span class="line">        sem-&gt;value --;</span><br><span class="line">        local_intr_restore(intr_flag);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">wait_t</span> __wait, *wait = &amp;__wait;</span><br><span class="line">    <span class="comment">// 将当前的进程放入等待队列</span></span><br><span class="line">    wait_current_set(&amp;(sem-&gt;wait_queue), wait, wait_state);</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 切到其他进程，放弃时间片</span></span><br><span class="line">    schedule();</span><br><span class="line"></span><br><span class="line">    local_intr_save(intr_flag);</span><br><span class="line">    <span class="comment">//恢复执行后将当前进程从wait队列删除</span></span><br><span class="line">    wait_current_del(&amp;(sem-&gt;wait_queue), wait);</span><br><span class="line">    local_intr_restore(intr_flag);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (wait-&gt;wakeup_flags != wait_state) &#123;</span><br><span class="line">        <span class="keyword">return</span> wait-&gt;wakeup_flags;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">void</span></span><br><span class="line">wait_current_set(<span class="keyword">wait_queue_t</span> *<span class="built_in">queue</span>, <span class="keyword">wait_t</span> *wait, <span class="keyword">uint32_t</span> wait_state) &#123;</span><br><span class="line">    <span class="comment">// 用当前的进程建一个 wait 结构体放入信号量等待队列</span></span><br><span class="line">    wait_init(wait, current);</span><br><span class="line">    <span class="comment">// 设置当前的进程状态为睡眠状态，后面调用 schedule 放弃时间片</span></span><br><span class="line">    current-&gt;state = PROC_SLEEPING;</span><br><span class="line">    current-&gt;wait_state = wait_state;</span><br><span class="line">    wait_queue_add(<span class="built_in">queue</span>, wait);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="管程"><a href="#管程" class="headerlink" title="管程"></a>管程</h2><p><a target="_blank" rel="noopener" href="https://kiprey.github.io/2020/09/uCore-7/#%E7%BB%83%E4%B9%A02">管程</a></p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/01/24/Lab4/" rel="prev" title="Lab4 实验报告">
+      <i class="fa fa-chevron-left"></i> Lab4 实验报告
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/01/24/Lab6/" rel="next" title="Lab6 实验报告">
+      Lab6 实验报告 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Lab7"><span class="nav-number">1.</span> <span class="nav-text">Lab7</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9A%E6%97%B6%E5%99%A8-Timer"><span class="nav-number">1.1.</span> <span class="nav-text">定时器 Timer</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%86%85%E6%A0%B8%E4%BF%A1%E5%8F%B7%E9%87%8F%E5%AE%9E%E7%8E%B0"><span class="nav-number">1.2.</span> <span class="nav-text">内核信号量实现</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#sem-init"><span class="nav-number">1.2.1.</span> <span class="nav-text">sem_init</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#up"><span class="nav-number">1.2.2.</span> <span class="nav-text">up</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#down"><span class="nav-number">1.2.3.</span> <span class="nav-text">down</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%AE%A1%E7%A8%8B"><span class="nav-number">1.3.</span> <span class="nav-text">管程</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">lagrange</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">lagrange</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

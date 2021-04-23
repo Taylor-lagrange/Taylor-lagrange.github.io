@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Muse","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Lab3do_pgfault 之前当程序访问内存遇上特殊情况时，CPU 会执行第十四号中断处理程序——缺页处理程序来处理。 特殊情况如下  写入一个存在物理页的虚拟页——写时复制。 读写一个不存在物理页的虚拟页——缺页。 不满足访问权限。  当程序触发缺页中断时，CPU 会把产生异常的线性地址存储在 CR2 寄存器中，并且把页访问异常错误码保存在中断栈中。 其中，页访问异常错误码的位 0 为 1">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Lab3 实验报告">
+<meta property="og:url" content="http://example.com/2021/01/24/Lab3/index.html">
+<meta property="og:site_name" content="lagrange&#39;s blog">
+<meta property="og:description" content="Lab3do_pgfault 之前当程序访问内存遇上特殊情况时，CPU 会执行第十四号中断处理程序——缺页处理程序来处理。 特殊情况如下  写入一个存在物理页的虚拟页——写时复制。 读写一个不存在物理页的虚拟页——缺页。 不满足访问权限。  当程序触发缺页中断时，CPU 会把产生异常的线性地址存储在 CR2 寄存器中，并且把页访问异常错误码保存在中断栈中。 其中，页访问异常错误码的位 0 为 1">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-01-24T10:47:34.000Z">
+<meta property="article:modified_time" content="2021-04-23T00:27:29.271Z">
+<meta property="article:author" content="lagrange">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="http://example.com/2021/01/24/Lab3/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>Lab3 实验报告 | lagrange's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">lagrange's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+      <p class="site-subtitle" itemprop="description">what's dead may never die</p>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档<span class="badge">14</span></a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2021/01/24/Lab3/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="lagrange">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="lagrange's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          Lab3 实验报告
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-01-24 10:47:34" itemprop="dateCreated datePublished" datetime="2021-01-24T10:47:34Z">2021-01-24</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">更新于</span>
+                <time title="修改时间：2021-04-23 00:27:29" itemprop="dateModified" datetime="2021-04-23T00:27:29Z">2021-04-23</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/OS/" itemprop="url" rel="index"><span itemprop="name">OS</span></a>
+                </span>
+            </span>
+
+          
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="Lab3"><a href="#Lab3" class="headerlink" title="Lab3"></a>Lab3</h1><h2 id="do-pgfault-之前"><a href="#do-pgfault-之前" class="headerlink" title="do_pgfault 之前"></a>do_pgfault 之前</h2><p>当程序访问内存遇上特殊情况时，CPU 会执行第十四号中断处理程序——缺页处理程序来处理。</p>
+<p>特殊情况如下</p>
+<ol>
+<li>写入一个存在物理页的虚拟页——写时复制。</li>
+<li>读写一个不存在物理页的虚拟页——缺页。</li>
+<li>不满足访问权限。</li>
+</ol>
+<p>当程序触发缺页中断时，CPU 会把产生异常的线性地址存储在 CR2 寄存器中，并且把页访问异常错误码保存在中断栈中。</p>
+<p>其中，页访问异常错误码的位 0 为 1 表示对应物理页不存在；位 1 为 1 表示写异常；位 2 为 1 表示访问权限异常。</p>
+<h3 id="中断处理机制"><a href="#中断处理机制" class="headerlink" title="中断处理机制"></a>中断处理机制</h3><p>一直到<code>do_pgfault</code>的函数调用链为</p>
+<p><strong>trap–&gt; trap_dispatch–&gt;pgfault_handler–&gt;do_pgfault</strong></p>
+<p>首先是在 trap.c 中中断向量表初始化的时候，将 vectors.S 中的所有跳转到__alltraps 的函数作为中断处理程序填写到 idt 表中，并设置中断寄存器 IDT。</p>
+<p>完成该操作后，所有的中断会带着中断的描述向量值跳转到 __alltraps 中，这段汇编会进行中断现场的保存和恢复，并建立一个中断栈帧，最后带着栈帧跳转到 trap.c 中的 trap 函数，trap 函数直接调用 trap_dispatch（并传递该栈帧），trap_dispatch 函数包含了一个 case 语句，根据中断号调用 os 中不同的函数进行处理。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">vector254:</span><br><span class="line">  pushl $<span class="number">0</span></span><br><span class="line">  pushl $<span class="number">254</span></span><br><span class="line">  jmp __alltraps</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="class"><span class="keyword">struct</span> <span class="title">gatedesc</span> <span class="title">idt</span>[256] =</span> &#123;&#123;<span class="number">0</span>&#125;&#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="class"><span class="keyword">struct</span> <span class="title">pseudodesc</span> <span class="title">idt_pd</span> =</span> &#123;</span><br><span class="line">    <span class="keyword">sizeof</span>(idt) - <span class="number">1</span>, (<span class="keyword">uintptr_t</span>)idt</span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">void</span></span><br><span class="line">idt_init(<span class="keyword">void</span>) &#123;</span><br><span class="line">    <span class="keyword">extern</span> <span class="keyword">uintptr_t</span> __vectors[];</span><br><span class="line">    <span class="keyword">int</span> i;</span><br><span class="line">    <span class="keyword">for</span> (i = <span class="number">0</span>; i &lt; <span class="keyword">sizeof</span>(idt) / <span class="keyword">sizeof</span>(struct gatedesc); i ++) &#123;</span><br><span class="line">        SETGATE(idt[i], <span class="number">0</span>, GD_KTEXT, __vectors[i], DPL_KERNEL);</span><br><span class="line">    &#125;</span><br><span class="line">    lidt(&amp;idt_pd);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="do-pgfault"><a href="#do-pgfault" class="headerlink" title="do_pgfault"></a>do_pgfault</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">do_pgfault</span><span class="params">(struct mm_struct *mm, <span class="keyword">uint32_t</span> error_code, <span class="keyword">uintptr_t</span> addr)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> ret = -E_INVAL;</span><br><span class="line">    <span class="comment">// 获取触发pgfault的虚拟地址所在虚拟页</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">vma_struct</span> *<span class="title">vma</span> =</span> find_vma(mm, addr);</span><br><span class="line"></span><br><span class="line">    pgfault_num++;</span><br><span class="line">    <span class="comment">// 如果当前访问的虚拟地址不在已经分配的虚拟页中</span></span><br><span class="line">    <span class="keyword">if</span> (vma == <span class="literal">NULL</span> || vma-&gt;vm_start &gt; addr) &#123;</span><br><span class="line">        cprintf(<span class="string">&quot;not valid addr %x, and  can not find it in vma\n&quot;</span>, addr);</span><br><span class="line">        <span class="keyword">goto</span> failed;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 检测错误代码。这里的检测不涉及特权判断。</span></span><br><span class="line">    <span class="keyword">switch</span> (error_code &amp; <span class="number">3</span>) &#123;</span><br><span class="line">    <span class="keyword">default</span>:</span><br><span class="line">        <span class="comment">// 写，同时存在物理页，则写时复制</span></span><br><span class="line">        <span class="comment">// 需要注意的是，default会执行case2的代码，也就是判断是否有写权限。</span></span><br><span class="line">    <span class="keyword">case</span> <span class="number">2</span>:</span><br><span class="line">        <span class="comment">// 读，同时不存在物理页</span></span><br><span class="line">        <span class="comment">// 同时如果当前操作是写入，但所在虚拟页不允许写入</span></span><br><span class="line">        <span class="keyword">if</span> (!(vma-&gt;vm_flags &amp; VM_WRITE)) &#123;</span><br><span class="line">            cprintf(<span class="string">&quot;do_pgfault failed: error code flag = write AND not present, but the addr&#x27;s vma cannot write\n&quot;</span>);</span><br><span class="line">            <span class="keyword">goto</span> failed;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">break</span>;</span><br><span class="line">    <span class="keyword">case</span> <span class="number">1</span>: <span class="comment">/* error code flag : (W/R=0, P=1): read, present */</span></span><br><span class="line">        <span class="comment">// 读，同时存在物理页。那就不可能会调用page fault，肯定哪里有问题，直接failed</span></span><br><span class="line">        cprintf(<span class="string">&quot;do_pgfault failed: error code flag = read AND present\n&quot;</span>);</span><br><span class="line">        <span class="keyword">goto</span> failed;</span><br><span class="line">    <span class="keyword">case</span> <span class="number">0</span>: <span class="comment">/* error code flag : (W/R=0, P=0): read, not present */</span></span><br><span class="line">        <span class="comment">// 写，同时不存在物理页面</span></span><br><span class="line">        <span class="comment">// 如果当前操作是读取，但所在虚拟页不允许读取或执行</span></span><br><span class="line">        <span class="keyword">if</span> (!(vma-&gt;vm_flags &amp; (VM_READ | VM_EXEC))) &#123;</span><br><span class="line">            cprintf(<span class="string">&quot;do_pgfault failed: error code flag = read AND not present, but the addr&#x27;s vma cannot read or exec\n&quot;</span>);</span><br><span class="line">            <span class="keyword">goto</span> failed;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 设置页表条目所对应的权限</span></span><br><span class="line">    <span class="keyword">uint32_t</span> perm = PTE_U;</span><br><span class="line">    <span class="keyword">if</span> (vma-&gt;vm_flags &amp; VM_WRITE) &#123;</span><br><span class="line">        perm |= PTE_W;</span><br><span class="line">    &#125;</span><br><span class="line">    addr = ROUNDDOWN(addr, PGSIZE);</span><br><span class="line">    ret = -E_NO_MEM;</span><br><span class="line">    <span class="keyword">pte_t</span> *ptep=<span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* LAB3 EXERCISE 1: YOUR CODE */</span></span><br><span class="line">    <span class="comment">// 查找当前虚拟地址所对应的页表项</span></span><br><span class="line">    <span class="comment">// create 是 1，查找对应的页表项，页目录下找不到该页表则新建一个页表</span></span><br><span class="line">    <span class="comment">// 返回该页表的地址，地址为空说明找不到页表地址，直接返回failed</span></span><br><span class="line">    <span class="keyword">if</span> ((ptep = get_pte(mm-&gt;pgdir, addr, <span class="number">1</span>)) == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        cprintf(<span class="string">&quot;get_pte in do_pgfault failed\n&quot;</span>);</span><br><span class="line">        <span class="keyword">goto</span> failed;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 如果这个页表项（用了*说明取了页表项中的内容）为0（啥没有）说明所对应的物理页不存在，则新建一个页对应页表</span></span><br><span class="line">    <span class="keyword">if</span> (*ptep == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">// 分配一块物理页，并设置页表项</span></span><br><span class="line">        <span class="keyword">if</span> (pgdir_alloc_page(mm-&gt;pgdir, addr, perm) == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            cprintf(<span class="string">&quot;pgdir_alloc_page in do_pgfault failed\n&quot;</span>);</span><br><span class="line">            <span class="keyword">goto</span> failed;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">/* LAB3 EXERCISE 2: YOUR CODE */</span></span><br><span class="line">        <span class="comment">// 如果这个页表项所对应的物理页存在，但不在内存中</span></span><br><span class="line">        <span class="comment">// 如果swap已经初始化完成</span></span><br><span class="line">        <span class="keyword">if</span>(swap_init_ok) &#123;</span><br><span class="line">            struct Page *page=<span class="literal">NULL</span>;</span><br><span class="line">            <span class="comment">// 将目标数据加载到某块新的物理页中。</span></span><br><span class="line">            <span class="comment">// 该物理页可能是尚未分配的物理页，也可能是从别的已分配物理页中取的</span></span><br><span class="line">            <span class="keyword">if</span> ((ret = swap_in(mm, addr, &amp;page)) != <span class="number">0</span>) &#123;</span><br><span class="line">                cprintf(<span class="string">&quot;swap_in in do_pgfault failed\n&quot;</span>);</span><br><span class="line">                <span class="keyword">goto</span> failed;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="comment">// 将该物理页与对应的虚拟地址关联，同时设置页表。</span></span><br><span class="line">            page_insert(mm-&gt;pgdir, page, addr, perm);</span><br><span class="line">            <span class="comment">// 当前缺失的页已经加载回内存中，所以设置当前页为可swap。</span></span><br><span class="line">            swap_map_swappable(mm, addr, page, <span class="number">1</span>);</span><br><span class="line">            page-&gt;pra_vaddr = addr;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">else</span> &#123;</span><br><span class="line">            cprintf(<span class="string">&quot;no swap_init_ok but ptep is %x, failed\n&quot;</span>,*ptep);</span><br><span class="line">            <span class="keyword">goto</span> failed;</span><br><span class="line">        &#125;</span><br><span class="line">   &#125;</span><br><span class="line">   ret = <span class="number">0</span>;</span><br><span class="line">failed:</span><br><span class="line">    <span class="keyword">return</span> ret;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>所以只要在 vma 里面设置的地址都是被 os 认定为有效的，找不到该地址会新建一个页，该页判断被换出会进行换入操作。</p>
+<p>swap_in 函数首先向 OS 申请一个空闲页面，然后调用 swapfs_read 尝试将其从 swap 分区中读出。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">int</span></span><br><span class="line">swap_in(struct mm_struct *mm, <span class="keyword">uintptr_t</span> addr, struct Page **ptr_result)</span><br><span class="line">&#123;</span><br><span class="line">     <span class="class"><span class="keyword">struct</span> <span class="title">Page</span> *<span class="title">result</span> =</span> alloc_page();</span><br><span class="line">     <span class="keyword">pte_t</span> *ptep = get_pte(mm-&gt;pgdir, addr, <span class="number">0</span>);</span><br><span class="line">     <span class="keyword">int</span> r;</span><br><span class="line">     <span class="comment">//*ptep = pa | PTE_P | perm;</span></span><br><span class="line">     <span class="comment">//这时候PTE_P无效，pa与磁盘扇区有映射关系</span></span><br><span class="line">     <span class="keyword">if</span> ((r = swapfs_read((*ptep), result)) != <span class="number">0</span>)</span><br><span class="line">        assert(r!=<span class="number">0</span>);</span><br><span class="line">     *ptr_result=result;</span><br><span class="line">     <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="SWAP"><a href="#SWAP" class="headerlink" title="SWAP"></a>SWAP</h2><p>虚存中的页与硬盘上的扇区之间的映射关系</p>
+<p>如果一个页被置换到了硬盘上，那操作系统如何能简捷来表示这种情况呢？在 ucore 的设计上，充分利用了页表中的 PTE 来表示这种情况：当一个 PTE 用来描述一般意义上的物理页时，显然它应该维护各种权限和映射关系，以及应该有 PTE_P 标记；但当它用来描述一个被置换出去的物理页时，它被用来维护该物理页与 swap 磁盘上扇区的映射关系，并且该 PTE 不应该由 MMU 将它解释成物理页映射(即没有 PTE_P 标记)，与此同时对应的权限则交由 mm_struct 来维护，当对位于该页的内存地址进行访问的时候，必然导致 page fault，然后 ucore 能够根据 PTE 描述的 swap 项将相应的物理页重新建立起来，并根据虚存所描述的权限重新设置好 PTE 使得内存访问能够继续正常进行。</p>
+<p>如果一个页（4KB/页）被置换到了硬盘某 8 个扇区（0.5KB/扇区），该 PTE 的最低位–present 位应该为 0 （即 PTE_P 标记为空，表示虚实地址映射关系不存在），接下来的 7 位暂时保留，可以用作各种扩展；而包括原来高 20 位页帧号的高 24 位数据，恰好可以用来表示此页在硬盘上的起始扇区的位置（其从第几个扇区开始）。为了在页表项中区别 0 和 swap 分区的映射，将 swap 分区的一个 page 空出来不用，也就是说一个高 24 位不为 0，而最低位为 0 的 PTE 表示了一个放在硬盘上的页的起始扇区号（见 swap.h 中对 swap_entry_t 的描述）：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">swap_entry_t</span><br><span class="line">-------------------------</span><br><span class="line">| offset | reserved | 0 |</span><br><span class="line">-------------------------</span><br><span class="line">24 bits    7 bits   1 bit</span><br></pre></td></tr></table></figure>
+<p>考虑到硬盘的最小访问单位是一个扇区，而一个扇区的大小为 512（$2^8$）字节，所以需要 8 个连续扇区才能放置一个 4KB 的页。在 ucore 中，用了第二个 IDE 硬盘来保存被换出的扇区，根据实验三的输出信息</p>
+<blockquote>
+<p>实验三还创建了一个 swap.img</p>
+</blockquote>
+<figure class="highlight makefile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">SWAPIMG		:= <span class="variable">$(<span class="built_in">call</span> totarget,swap.img)</span></span><br><span class="line"></span><br><span class="line"><span class="variable">$(SWAPIMG)</span>:</span><br><span class="line">	<span class="variable">$(V)</span>dd if=/dev/zero of=<span class="variable">$@</span> bs=1024k count=128</span><br><span class="line"></span><br><span class="line"><span class="variable">$(<span class="built_in">call</span> create_target,swap.img)</span></span><br></pre></td></tr></table></figure>
+<p>“ide 1: 262144(sectors), ‘QEMU HARDDISK’.”</p>
+<p>我们可以知道实验三可以保存 262144/8=32768 个页，即 128MB 的内存空间。swap 分区的大小是 swapfs_init 里面根据磁盘驱动的接口计算出来的，目前 ucore 里面要求 swap 磁盘至少包含 1000 个 page，并且至多能使用 1&lt;&lt;24 个 page。</p>
+<h2 id="FIFO"><a href="#FIFO" class="headerlink" title="FIFO"></a>FIFO</h2><p>Page 的数据结构里面又多了几个链接域，用于下面换入换出的时候来管理这些个 Page。因为 FIFO 需要维护现在正在使用的页，所以用来管理的结构是 Page 。因为这些页都是真的，没有被换出，被换出就得删页改页表。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// the control struct for a set of vma using the same PDT</span></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">mm_struct</span> &#123;</span></span><br><span class="line">    <span class="keyword">list_entry_t</span> mmap_list;        <span class="comment">// 按照虚拟地址顺序双向连接的虚拟页链表</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">vma_struct</span> *<span class="title">mmap_cache</span>;</span> <span class="comment">// 当前使用的虚拟页地址，该成员加速页索引速度。</span></span><br><span class="line">    <span class="keyword">pde_t</span> *pgdir;                  <span class="comment">// 虚拟页对应的PDT</span></span><br><span class="line">    <span class="keyword">int</span> map_count;                 <span class="comment">// 虚拟页个数</span></span><br><span class="line">    <span class="keyword">void</span> *sm_priv;                 <span class="comment">// 用于指向swap manager的某个链表,在FIFO算法中，该双向链表用于将可交换的已分配物理页串起来</span></span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">Page</span> &#123;</span></span><br><span class="line">    <span class="keyword">int</span> ref;</span><br><span class="line">    <span class="keyword">uint32_t</span> flags;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">int</span> property;</span><br><span class="line">    <span class="keyword">list_entry_t</span> page_link;</span><br><span class="line">    <span class="keyword">list_entry_t</span> pra_page_link;     <span class="comment">// 用于连接上一个和下一个*可交换已分配*的物理页</span></span><br><span class="line">    <span class="keyword">uintptr_t</span> pra_vaddr;            <span class="comment">// 用于保存该物理页所对应的虚拟地址。</span></span><br><span class="line">&#125;;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">int</span></span><br><span class="line">_fifo_map_swappable(struct mm_struct *mm, <span class="keyword">uintptr_t</span> addr, struct Page   *page, <span class="keyword">int</span> swap_in)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">list_entry_t</span> *head=(<span class="keyword">list_entry_t</span>*) mm-&gt;sm_priv;</span><br><span class="line">    <span class="keyword">list_entry_t</span> *entry=&amp;(page-&gt;pra_page_link);</span><br><span class="line"></span><br><span class="line">    assert(entry != <span class="literal">NULL</span> &amp;&amp; head != <span class="literal">NULL</span>);</span><br><span class="line">    <span class="comment">//record the page access situlation</span></span><br><span class="line">    <span class="comment">/*LAB3 EXERCISE 2: YOUR CODE*/</span></span><br><span class="line">    <span class="comment">//(1)link the most recent arrival page at the back of the pra_list_head qeueue.</span></span><br><span class="line">    list_add(head, entry);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">static</span> <span class="keyword">int</span></span><br><span class="line">_fifo_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, <span class="keyword">int</span> in_tick)</span><br><span class="line">&#123;</span><br><span class="line">     <span class="keyword">list_entry_t</span> *head=(<span class="keyword">list_entry_t</span>*) mm-&gt;sm_priv;</span><br><span class="line">         assert(head != <span class="literal">NULL</span>);</span><br><span class="line">     assert(in_tick==<span class="number">0</span>);</span><br><span class="line">     <span class="comment">/* Select the victim */</span></span><br><span class="line">     <span class="comment">/*LAB3 EXERCISE 2: YOUR CODE*/</span></span><br><span class="line">     <span class="comment">//(1)  unlink the  earliest arrival page in front of pra_list_head qeueue</span></span><br><span class="line">     <span class="comment">//(2)  assign the value of *ptr_page to the addr of this page</span></span><br><span class="line">     <span class="keyword">list_entry_t</span> *le = head-&gt;prev;</span><br><span class="line">     assert(head!=le);</span><br><span class="line">     <span class="class"><span class="keyword">struct</span> <span class="title">Page</span> *<span class="title">p</span> =</span> le2page(le, pra_page_link);</span><br><span class="line">     list_del(le);</span><br><span class="line">     assert(p !=<span class="literal">NULL</span>);</span><br><span class="line">     *ptr_page = p;</span><br><span class="line"></span><br><span class="line">     <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/01/24/Lab6/" rel="prev" title="Lab6 实验报告">
+      <i class="fa fa-chevron-left"></i> Lab6 实验报告
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/03/24/%E8%BF%9B%E7%A8%8B%E7%AE%A1%E7%90%86/" rel="next" title="hardCore 进程管理">
+      hardCore 进程管理 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Lab3"><span class="nav-number">1.</span> <span class="nav-text">Lab3</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#do-pgfault-%E4%B9%8B%E5%89%8D"><span class="nav-number">1.1.</span> <span class="nav-text">do_pgfault 之前</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%B8%AD%E6%96%AD%E5%A4%84%E7%90%86%E6%9C%BA%E5%88%B6"><span class="nav-number">1.1.1.</span> <span class="nav-text">中断处理机制</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#do-pgfault"><span class="nav-number">1.2.</span> <span class="nav-text">do_pgfault</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#SWAP"><span class="nav-number">1.3.</span> <span class="nav-text">SWAP</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#FIFO"><span class="nav-number">1.4.</span> <span class="nav-text">FIFO</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">lagrange</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">14</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">4</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2021</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">lagrange</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://muse.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Muse</a> 强力驱动
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/muse.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
